@@ -1,0 +1,167 @@
+# Description: Utility functions for Python projects.
+# Version: 2.0
+
+from loguru import logger
+import sys
+import json
+import time
+from pathlib import Path
+import datetime
+
+
+class Utility:
+    LOG_FILE = "application.log"
+    LOG_LEVEL = "INFO"
+    # LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(filename)s.%(funcName)s] - %(message)s"
+    LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(filename)s.%(funcName)-30s] - %(message)s"
+    # "2024-07-25 18:53:33,758 [INFO] [api_manager.py.login] - Kullanıcı giriş yaptı."
+
+    def __init__(self):
+        self.directory = Utility.get_working_directory()
+        self.config_path = self.directory / "config.json"
+        self.config = Utility.load_config(self.config_path)
+        logger.info(f"Yapılandırma dosyası yüklendi: {self.config_path}")
+        logger.debug(f"Çalışma dizini: {self.directory}")
+        logger.debug(f"Yapılandırma: {self.config}")
+
+    @staticmethod
+    def get_working_directory() -> Path:
+        """Uygulamanın çalıştığı yolu Path objesi olarak döndürür."""
+        logger.debug("Çalışma dizini belirleniyor.")
+        if getattr(sys, 'frozen', False):
+            path = Path(sys.executable).parent
+            logger.debug(f"Uygulama .exe olarak çalıştırılıyor. Çalışma dizini: {path}")
+        else:
+            try:
+                path = Path(__file__).parent.resolve()
+                logger.debug(f"Uygulama Python betiği olarak çalıştırılıyor. Çalışma dizini: {path}")
+            except NameError:
+                path = Path.cwd()
+                logger.debug(f"Uygulama interaktif ortamda çalışıyor. Çalışma dizini: {path}")
+        return path
+
+    @staticmethod
+    def configure_logging_old(file_name=LOG_FILE, log_level=LOG_LEVEL, log_format=LOG_FORMAT):
+        """ Loglama yapılandırmasını başlatır.
+        Dökümantasyon:
+        https://docs.python.org/3/library/logger.html#logger.Formatter.formatTime
+        """
+        import logging as logger
+        file_path = Utility.get_working_directory() / file_name
+        logger.basicConfig(filename=file_path, level=log_level, format=log_format, force=True)
+
+    @staticmethod
+    def configure_loguru(file_name=LOG_FILE):
+        """ Loglama yapılandırmasını başlatır."""
+        file_path = Utility.get_working_directory() / file_name
+        # Terminalde logları göstermek için
+        logger.add(sys.stderr, level="WARNING")
+        # Aynı zamanda logları bir dosyaya yazmak için
+        logger.add(file_path, backtrace=True, rotation="10 MB", compression="zip", level="INFO")
+
+    @staticmethod
+    def load_config(config_path):
+        """Yapılandırma dosyasını yükler."""
+        try:
+            logger.info(f"Yapılandırma dosyası yükleniyor: {config_path}")
+            with open(config_path, "r") as file:
+                return json.load(file)
+        except FileNotFoundError:
+            logger.error(f"Yapılandırma dosyası bulunamadı: {config_path}")
+            return {}
+
+    @staticmethod
+    def get_valid_input(prompt, valid_range):
+        while True:
+            try:
+                value = int(input(prompt))
+                if value in valid_range:
+                    return value
+                else:
+                    logger.error(f"Geçersiz girdi: {value}. Tekrar deneyin.")
+            except ValueError:
+                logger.error("Geçersiz girdi. Lütfen bir sayı girin.")
+
+    @staticmethod
+    def clear_screen():
+        """Terminal ekranını temizler"""
+        print("\033c", end="")
+
+    @staticmethod
+    def _now(gmt=3):
+        """Şu anki UTC+X zamanı döndürür."""
+        delta = datetime.timedelta(hours=gmt) # 3:00:00
+        utc3 = datetime.timezone(delta) # UTC+03:00
+        return datetime.datetime.now(utc3) # 2024-08-08 20:40:57.115676+03:00
+
+    @staticmethod
+    def get_upcoming_dates(days=7) -> list:
+        """Gelecek gün listesi oluşturur."""
+        return [(Utility._now() + datetime.timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
+
+    @staticmethod
+    def format_seconds_to_hms2(seconds: int) -> str:
+        """Formats seconds into HH:MM:SS format."""
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    @staticmethod
+    def format_seconds_to_hms(seconds) -> str:
+        """Formats seconds into HH:MM:SS format."""
+        return str(datetime.timedelta(seconds=int(seconds)))
+
+    @staticmethod
+    def wait_until_target_time_colab(target_time):
+        """Belirtilen zamana kadar bekler ve sürekli olarak kalan süreyi günceller."""
+        from IPython.display import clear_output
+
+        while True:
+            now = Utility._now()
+            if now.hour == target_time.hour and now.minute == target_time.minute:
+                logger.info(f"Hedef saate {now.strftime('%H:%M:%S')} ulaşıldı.")
+                break
+
+            time_remaining = (target_time - now).total_seconds()
+            formatted_time = Utility.format_seconds_to_hms(time_remaining)
+            clear_output(wait=True)
+            print(f"Kalan süre: {formatted_time}")
+            time.sleep(1)
+
+    @staticmethod
+    def wait_until_target_time(target_time):
+        """Belirtilen saat ve dakikaya kadar bekler"""
+        logger.info("Zaman kontrolü başlatıldı.")
+
+        while True:
+            now = Utility._now()
+
+            if now.hour == target_time.hour and now.minute == target_time.minute:
+                logger.info(f"Hedef saate {now.strftime('%H:%M:%S')} ulaşıldı.")
+                break
+
+            if now.second % 30 == 0:
+                time_remaining = (target_time - now).total_seconds() + 1
+                # 1 saniye ekledim çünkü 59'dan 0'a geçerken 1 saniye kayboluyor.
+                formatted_time = Utility.format_seconds_to_hms(time_remaining)
+                print(f"Kalan süre: {formatted_time}", end="\r", flush=True)
+
+            time.sleep(1)
+
+    @staticmethod
+    def schedule(run_at_midnight=True, hour=0, minute=0):
+        """Programın gece yarısı veya belirli bir saatte çalışmasını sağlar."""
+        now = Utility._now()
+        # target_time = now.replace(hour=0 if run_at_midnight else hour, minute=0 if run_at_midnight else minute, second=0, microsecond=0)
+
+        if run_at_midnight:
+            target_time = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target_time <= now:
+                target_time += datetime.timedelta(days=1)
+
+        target_time_hm = target_time.strftime('%Y-%m-%d %H:%M')
+        print(f"Program {target_time_hm} zamanında çalıştırılacak.")
+        logger.info(f"Program {target_time_hm} zamanında çalıştırılacak.")
+        Utility.wait_until_target_time(target_time)
