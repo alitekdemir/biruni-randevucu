@@ -78,18 +78,19 @@ class ReservationManager:
         self.telegram_bot = TelegramBot(token=config["TELEGRAM_TOKEN"],
                                         chat_id=config["TELEGRAM_ID"])
 
-    # def _get_api_url(self, endpoint_name):
-    #     """API endpoint URL'sini döndürür."""
-    #     base_url = "https://api.istasyon.gungoren.bel.tr/v1/app"
-    #     endpoints = {
-    #         "login": "/authorize",
-    #         "reservations": "/registration",
-    #         "profile": "/profile",
-    #         "cancel": "/registration",
-    #     }
-    #     return f"{base_url}{endpoints.get(endpoint_name)}"
+    def _get_api_url2(self, endpoint_name):
+        """API endpoint URL'sini döndürür."""
+        base_url = "https://api.istasyon.gungoren.bel.tr/v1/app"
+        endpoints = {
+            "login": "/authorize",
+            "reservations": "/registration",
+            "profile": "/profile",
+            "cancel": "/registration",
+        }
+        return f"{base_url}{endpoints.get(endpoint_name)}"
 
     def _get_api_url(self, endpoint_name):
+        """API endpoint URL'sini döndürür."""
         BASE_URL = "https://api.istasyon.gungoren.bel.tr/v1/app"
         ENDPOINTS = {
             "login": BASE_URL + "/authorize",
