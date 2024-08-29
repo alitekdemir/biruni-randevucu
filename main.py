@@ -4,8 +4,7 @@ from reservation import ReservationManager
 
 
 def main(run_midnight=True):
-    utils = Utility()
-    utils.configure_loguru(file_name="biruni.log")
+    utils = Utility(log_file_name="biruni.log")
     logger.info("------------ PROGRAM BAŞLADI ------------")
 
     # USERNAME veya PASSWORD bilgileri False (boş, None, vb.) ise çevre değişkenlerini kullan
@@ -25,7 +24,8 @@ def main(run_midnight=True):
 
         utils.configure_schedule(choice)
         reservation_manager = ReservationManager(utils.config)
-        reservation_manager.manage_reservations()
+        reservation_manager.start_reservations()
+        # reservation_manager.cancel_all_reservations()
 
     except KeyboardInterrupt:
         logger.info("Program kullanıcı tarafından sonlandırıldı.")
@@ -38,5 +38,4 @@ def main(run_midnight=True):
 
 
 if __name__ == "__main__":
-    logger.remove()  # Tüm mevcut handler'ları kaldır
     main(run_midnight=True)

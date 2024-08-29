@@ -37,6 +37,20 @@ class APIHelper:
             raise RuntimeError(f"Unexpected error: {str(e)}")
 
 
+        # except requests.HTTPError as errh:
+        #     logger.error(f"HTTP Hatası: {errh}")
+        #     return {'success': False, 'error': 'HTTP hatası oluştu'}
+        # except requests.ConnectionError as errc:
+        #     logger.error(f"Bağlantı Hatası: {errc}")
+        #     return {'success': False, 'error': 'Bağlantı hatası oluştu'}
+        # except requests.Timeout as errt:
+        #     logger.error(f"Zaman Aşımı Hatası: {errt}")
+        #     return {'success': False, 'error': 'Zaman aşımı hatası oluştu'}
+        # except requests.RequestException as err:
+        #     logger.error(f"Bilinmeyen Hata: {err}")
+        #     return {'success': False, 'error': 'Bilinmeyen bir hata oluştu'}
+
+
     @staticmethod
     def validate_and_transform_response(response):
         """API yanıtını doğrular ve işlenmeye uygun bir formata dönüştürür."""
@@ -166,16 +180,26 @@ class ReservationManager:
 
     def cancel_reservation(self, reservation_id):
         """Belirtilen rezervasyon ID'sine sahip rezervasyonu iptal eder."""
-        logger.info(f"Rezervasyon {reservation_id} iptal ediliyor...")
         url = f"{self._get_api_url('cancel')}/{reservation_id}"
-        APIHelper.make_request(url, 'delete', headers=self.headers)
-        logger.info(f"Rezervasyon {reservation_id} başarıyla iptal edildi.")
+        try:
+            response = requests.delete(url, headers=self.headers)
+            if response.ok:
+                logger.info(f"Rezervasyon {reservation_id} başarıyla iptal edildi.")
+        except requests.RequestException as e:
+            logger.error(f"Rezervasyon iptali başarısız: {e}")
+            raise RuntimeError(f"Rezervasyon iptali başarısız: {e}") from e
+
 
     def cancel_all_reservations(self):
         """Tüm rezervasyonları iptal eder."""
-        reservations = self.get_active_reservations()
-        for reservation in reservations:
+        self.login()
+        reserved = self.get_active_reservations()
+
+        for reservation in reserved:
+            text = f"{reservation['date']:<12} {reservation['seat']:>2}. için rezervasyon iptali yapılıyor..."
+            print(text), logger.info(text)
             self.cancel_reservation(reservation['id'])
+
         logger.info("Tüm rezervasyonlar başarıyla iptal edildi.")
 
 
@@ -193,6 +217,7 @@ class ReservationManager:
         }
         response = APIHelper.make_request(url, headers=self.headers, params=params)
         return self.parse_active_reservations_data(response)
+
 
     def parse_active_reservations_data(self, response):
         """API yanıtından rezervasyon verilerini çıkarır."""
@@ -243,11 +268,10 @@ class ReservationManager:
             logger.warning("Loglanacak rezervasyon detayı yok.")
 
 
-    def create_reservation(self, date, seat):
+    def create_reservation2(self, date, seat):
         """Belirli bir koltuk için rezervasyon yapar."""
-        message = f"Rezervasyon kaydı deneniyor: Tarih:{date}, Koltuk:{seat}"
-        print(message)
-        logger.info(message)
+        message = f"{date} Koltuk:{seat} Rezervasyon kaydı deneniyor."
+        print(message), logger.info(message)
 
         url = self._get_api_url("reservations")
         payload = {
@@ -266,7 +290,9 @@ class ReservationManager:
             if response.get('data'):
                 self.log_reservation(response['data']['attributes'])
                 return True
-            raise RuntimeError("No data returned in response")
+            logger.error("Rezervasyon yanıtında veri bulunamadı.")
+            return False
+            # raise RuntimeError("No data returned in response")
         except requests.RequestException as e:
             logger.error(f"Rezervasyon oluşturulamadı: {e}")
             raise RuntimeError(f"Rezervasyon oluşturulamadı: {e}") from e
@@ -275,46 +301,70 @@ class ReservationManager:
             raise RuntimeError(f"Reservation creation failed: {e}") from e
 
 
+
+    def create_reservation(self, date, seat):
+        """Belirli bir koltuk için rezervasyon yapar."""
+        message = f"{date} Koltuk:{seat} Rezervasyon kaydı deneniyor."
+        print(message), logger.info(message)
+
+        url = self._get_api_url("reservations")
+        payload = {"data": {"attributes": {
+                    "date": date,
+                    "seat": seat,
+                    "station_id": self.config['STATION_ID'],
+                    "entry_time": self.config['ENTRY_TIME'],
+                    "exit_time": self.config['EXIT_TIME']
+                }}}
+        try:
+            response = APIHelper.make_request(url, 'post', headers=self.headers, json=payload)
+            if response.get('data'):
+                self.log_reservation(response['data']['attributes'])
+                return True
+            else:
+                logger.error("Rezervasyon yanıtında veri bulunamadı.")
+        except requests.RequestException as e:
+            logger.error(f"Rezervasyon oluşturulamadı: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error while creating reservation: {e}")
+        return False
+
+
     def create_reservation_for_seats(self, date):
         """Belirli bir tarih için koltuk rezervasyonu dener ve sonucu kaydeder."""
         logger.info(f"{date} tarihi için rezervasyon denemesi başlıyor...")
         for seat in self.config['SEATS']:
-            try:
-                # logger.info(f"{date} tarihi için {seat}. koltuk denetleniyor")
-                if self.create_reservation(date, seat):
-                    message = f"Rezervasyon başarılı: Tarih:{date}, Koltuk:{seat}"
-                    logger.info(message)
-                    print(message)
-                    if self.telegram_bot:
-                        self.telegram_bot.send_message(message)
-                    return True  # Başarılı rezervasyon sonrası döngüyü durdur
-                # logger.warning(f"{date} tarihi için {seat}. koltuk uygun değil.")
-            except Exception as e:
-                logger.warning(f"{date} tarihi için {seat}. koltuk rezervasyonu başarısız: {e}")
-        logger.warning(f"{date} tarihinde uygun koltuk bulunamadı.")
+            if self.create_reservation(date, seat):
+                message = f"Rezervasyon başarılı: Tarih:{date}, Koltuk:{seat}"
+                logger.info(message)
+                if self.telegram_bot:
+                    self.telegram_bot.send_message(message)
+                return True  # Başarılı rezervasyon sonrası döngüyü durdur
+            else:
+                logger.warning(f"{date} tarihi için {seat}. koltuk rezervasyonu başarısız oldu.")
+        logger.warning(f"{date} tarihinde hiç uygun koltuk bulunamadı.")
         return False
 
 
     def create_reservations_for_dates(self, reserved):
         """Gelecek günler için rezervasyon işlemleri yapar."""
-        print("Rezervasyon işlemi başlatılıyor...")
         reserved_dates = set(r['date'] for r in reserved)
         upcoming_dates = set(Utility.get_upcoming_dates()) - reserved_dates
 
         if not upcoming_dates:
             logger.info("Tüm tarihler için rezervasyonlar zaten dolu.")
             return False
-
+        
         logger.info(f"Rezervasyon yapılacak tarihler: {upcoming_dates}")
+
+        success = False
         for date in upcoming_dates:
             if self.create_reservation_for_seats(date):
-                return True  # İlk başarılı rezervasyondan sonra işlemi sonlandır
-        else:
-            logger.warning(f"{date} tarihinde rezervasyon oluşturulamadı.")
-            return False
+                success = True
+        return success
 
 
-    def manage_reservations(self):
+    def start_reservations(self):
+        """Rezervasyon yönetimini başlatır."""
         logger.info("Rezervasyon yönetimi başlatılıyor...")
         self.login()
         reserved = self.get_active_reservations()
@@ -322,8 +372,9 @@ class ReservationManager:
 
         # Eğer rezervasyonlar oluşturulduysa, tekrar kontrol et
         reserved_after = self.get_active_reservations() if status else reserved
-
+        logger.info("Rezervasyon işlemi tamamlandı.")
         print("Bitiş", Utility._now().strftime("%Y-%m-%d %H:%M:%S"))
+
         self.print_active_reservations_table(reserved_after, print)
         message = self.wrap_active_reservations_table(reserved_after)
         if self.telegram_bot:

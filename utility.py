@@ -11,17 +11,12 @@ from loguru import logger
 
 
 class Utility:
-    LOG_FILE = "application.log"
-    LOG_LEVEL = "INFO"
-    # LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(filename)s.%(funcName)s] - %(message)s"
-    LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(filename)s.%(funcName)-30s] - %(message)s"
-    # "2024-07-25 18:53:33,758 [INFO] [api_manager.py.login] - Kullanıcı giriş yaptı."
 
-    def __init__(self):
+    def __init__(self, log_file_name="utility.log"):
+        self.configure_loguru(log_file_name)  # Logger'ı belirtilen dosya adıyla yapılandır
         self.directory = Utility.get_working_directory()
         self.config_path = self.directory / "config.json"
         self.config = Utility.load_config(self.config_path)
-        logger.info(f"Yapılandırma dosyası yüklendi: {self.config_path}")
         logger.debug(f"Çalışma dizini: {self.directory}")
         logger.debug(f"Yapılandırma: {self.config}")
 
@@ -42,19 +37,27 @@ class Utility:
         return path
 
     @staticmethod
-    def configure_logging_old(file_name=LOG_FILE, log_level=LOG_LEVEL, log_format=LOG_FORMAT):
+    def configure_logging_old(file_name, log_level="INFO"):
         """ Loglama yapılandırmasını başlatır.
         Dökümantasyon:
         https://docs.python.org/3/library/logger.html#logger.Formatter.formatTime
         """
         import logging as logger
+        # log_format = "%(asctime)s [%(levelname)s] [%(filename)s.%(funcName)s] - %(message)s"
+        # 2024-07-25 18:53:33,758 [INFO] [api_manager.py.login] - Kullanıcı giriş yaptı.
+        log_format = "%(asctime)s [%(levelname)s] [%(filename)s.%(funcName)-30s] - %(message)s"
+
         file_path = Utility.get_working_directory() / file_name
         logger.basicConfig(filename=file_path, level=log_level, format=log_format, force=True)
 
+
     @staticmethod
-    def configure_loguru(file_name=LOG_FILE):
+    def configure_loguru(file_name):
         """ Loglama yapılandırmasını başlatır."""
         file_path = Utility.get_working_directory() / file_name
+        
+        # Tüm mevcut handler'ları kaldır
+        logger.remove()
         # Terminalde logları göstermek için
         logger.add(sys.stderr, level="WARNING")
         # Aynı zamanda logları bir dosyaya yazmak için
