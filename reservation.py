@@ -12,8 +12,8 @@ class APIHelper:
         logger.debug(f"Request URL: {url}, Method: {method}, Payload: {kwargs.get('json')}")
         try:
             response = requests.request(method, url, timeout=10, **kwargs)
-            logger.debug(f"Response Status: {response.status_code}, Response Body: {response.text}")
             response.raise_for_status()  # HTTP hata durumlarını kontrol eder
+            logger.debug(f"Response Status: {response.status_code}, Response Body: {response.text}")
             return response.json()
         except requests.HTTPError as e:
             # HTTP hataları için detaylı log
@@ -89,6 +89,7 @@ class TelegramBot:
         self.base_url = f"https://api.telegram.org/bot{token}/"
         self.chat_id = chat_id
 
+
     def send_message(self, message):
         """Telegram'a mesaj gönderir."""
         url = f"{self.base_url}sendMessage"
@@ -132,9 +133,9 @@ class ReservationManager:
         self.telegram_bot = None
         if config.get("TELEGRAM_TOKEN") and config.get("TELEGRAM_ID"):
             self.telegram_bot = TelegramBot(token=config["TELEGRAM_TOKEN"], chat_id=config["TELEGRAM_ID"])
-            
 
-    def _get_api_url(self, endpoint_name):
+
+    def _get_api_url(self, endpoint_name: str) -> str:
         """API endpoint URL'sini döndürür."""
         base_url = "https://api.istasyon.gungoren.bel.tr/v1/app"
         endpoints = {
@@ -142,8 +143,13 @@ class ReservationManager:
             "reservations": "/registration",
             "profile": "/profile",
             "cancel": "/registration",
-        } # return f"{base_url}{endpoints.get(endpoint_name)}"
-        return base_url + endpoints.get(endpoint_name)
+        }
+
+        if endpoint_name not in endpoints:
+            logger.warning(f"Geçersiz endpoint adı: {endpoint_name}")
+            # raise ValueError(message)
+
+        return f"{base_url}{endpoints.get(endpoint_name, '')}"
 
 
     def login(self) -> None:
@@ -301,7 +307,6 @@ class ReservationManager:
             raise RuntimeError(f"Reservation creation failed: {e}") from e
 
 
-
     def create_reservation(self, date, seat):
         """Belirli bir koltuk için rezervasyon yapar."""
         message = f"{date} Koltuk:{seat} Rezervasyon kaydı deneniyor."
@@ -346,21 +351,20 @@ class ReservationManager:
 
 
     def create_reservations_for_dates(self, reserved):
-        """Gelecek günler için rezervasyon işlemleri yapar."""
+        """
+        Gelecek günler için rezervasyon işlemleri yapar.
+        Herhangi bir tarih için başarılı rezervasyon yapılırsa True döner.
+        """
         reserved_dates = set(r['date'] for r in reserved)
         upcoming_dates = set(Utility.get_upcoming_dates()) - reserved_dates
 
         if not upcoming_dates:
             logger.info("Tüm tarihler için rezervasyonlar zaten dolu.")
             return False
-        
-        logger.info(f"Rezervasyon yapılacak tarihler: {upcoming_dates}")
 
-        success = False
-        for date in upcoming_dates:
-            if self.create_reservation_for_seats(date):
-                success = True
-        return success
+        logger.info(f"Rezervasyon yapılacak tarihler: {upcoming_dates}")
+        check = [self.create_reservation_for_seats(date) for date in upcoming_dates]
+        return any(check)
 
 
     def start_reservations(self):
