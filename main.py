@@ -39,4 +39,4 @@ def main(run_midnight=True):
 
 if __name__ == "__main__":
     logger.remove()  # Tüm mevcut handler'ları kaldır
-    main(run_midnight=False)
+    main(run_midnight=True)
