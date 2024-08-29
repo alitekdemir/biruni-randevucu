@@ -1,8 +1,8 @@
 {
-	"USERNAME": "XXX",
-	"PASSWORD": "YYY",
-	"TELEGRAM_ID": "XXXX",
-	"TELEGRAM_TOKEN": "XXX:YYY",
+	"USERNAME": "",
+	"PASSWORD": "",
+	"TELEGRAM_ID": "",
+	"TELEGRAM_TOKEN": "",
 	"STATION_ID": "61a23dd5572db",
 	"ENTRY_TIME": "11:00",
 	"EXIT_TIME": "23:00",

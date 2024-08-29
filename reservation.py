@@ -1,26 +1,66 @@
 from loguru import logger
 import requests
 from utility import Utility
-
+import time
 
 
 class APIHelper:
     @staticmethod
     def make_request(url, method="get", **kwargs):
         """API isteği yapar ve yanıtı döndürür. Hataları loglar ve yönetir."""
-        logger.info(f"Request: {method.upper()}") # at {url}
+        logger.info(f"Making {method.upper()} request to URL: {url}")
+        logger.debug(f"Request URL: {url}, Method: {method}, Payload: {kwargs.get('json')}")
         try:
-            response = requests.request(method, url, **kwargs)
-            response.raise_for_status()
+            response = requests.request(method, url, timeout=10, **kwargs)
+            logger.debug(f"Response Status: {response.status_code}, Response Body: {response.text}")
+            response.raise_for_status()  # HTTP hata durumlarını kontrol eder
             return response.json()
+        except requests.HTTPError as e:
+            # HTTP hataları için detaylı log
+            logger.error(f"HTTP error occurred during API request to {url}: {e.response.status_code} {e.response.reason}")
+            raise RuntimeError(f"HTTP error {e.response.status_code}: {e.response.reason}") from e
+        except requests.ConnectionError:
+            # Bağlantı hataları için log
+            logger.error(f"Connection error occurred during API request to {url}")
+            raise RuntimeError("Connection error occurred. Please check your network connection.")
+        except requests.Timeout:
+            # Timeout hataları için log
+            logger.error("Timeout error during API request.")
+            raise RuntimeError("Request timed out. Please try again later.")
         except requests.RequestException as e:
-            # Tüm requests ile ilgili hataları yakala ve işle
-            logger.error(f"Network error during API request: {e}")
-            raise RuntimeError(f"Network error: {e}") from e
+            # Diğer tüm requests ile ilgili hataları yakala ve işle
+            logger.error(f"Request error during API request to {url}: {str(e)}")
+            raise RuntimeError(f"Request error: {e}")
         except Exception as e:
-            # Diğer beklenmeyen hatalar için genel bir log
-            logger.error(f"Unexpected error during API request: {e}")
-            raise RuntimeError(f"Unexpected error: {e}") from e
+            # Beklenmeyen hatalar için genel bir log
+            logger.error(f"Unexpected error during API request to {url}: {str(e)}")
+            raise RuntimeError(f"Unexpected error: {str(e)}")
+
+
+    @staticmethod
+    def validate_and_transform_response(response):
+        """API yanıtını doğrular ve işlenmeye uygun bir formata dönüştürür."""
+        if 'data' in response:
+            return response['data']
+        else:
+            logger.error("Invalid response format received from API")
+            raise ValueError("Invalid response format")
+
+
+    @staticmethod
+    def make_request_with_retry(url, method="get", retries=3, backoff_factor=0.5, **kwargs):
+        """API isteği yapar, başarısız olursa belirtilen sayıda yeniden dener."""
+        for retry in range(retries):
+            try:
+                return APIHelper.make_request(url, method, **kwargs)
+            except (requests.ConnectionError, requests.Timeout, requests.RequestException) as e:
+                logger.warning(f"Request failed, retrying... ({retry+1}/{retries})")
+                time.sleep(backoff_factor * (2 ** retry))  # Exponential backoff
+            except Exception as e:
+                logger.error(f"Fatal error: {str(e)}")
+                raise RuntimeError(f"Fatal error: {str(e)}")
+        logger.error("Maximum retry attempts reached, request failed.")
+        raise RuntimeError("Maximum retry attempts reached, request failed.")
 
 
 class TelegramBot:
@@ -75,10 +115,12 @@ class ReservationManager:
     def __init__(self, config):
         self.config = config
         self.headers = None
-        self.telegram_bot = TelegramBot(token=config["TELEGRAM_TOKEN"],
-                                        chat_id=config["TELEGRAM_ID"])
+        self.telegram_bot = None
+        if config.get("TELEGRAM_TOKEN") and config.get("TELEGRAM_ID"):
+            self.telegram_bot = TelegramBot(token=config["TELEGRAM_TOKEN"], chat_id=config["TELEGRAM_ID"])
+            
 
-    def _get_api_url2(self, endpoint_name):
+    def _get_api_url(self, endpoint_name):
         """API endpoint URL'sini döndürür."""
         base_url = "https://api.istasyon.gungoren.bel.tr/v1/app"
         endpoints = {
@@ -86,19 +128,8 @@ class ReservationManager:
             "reservations": "/registration",
             "profile": "/profile",
             "cancel": "/registration",
-        }
-        return f"{base_url}{endpoints.get(endpoint_name)}"
-
-    def _get_api_url(self, endpoint_name):
-        """API endpoint URL'sini döndürür."""
-        BASE_URL = "https://api.istasyon.gungoren.bel.tr/v1/app"
-        ENDPOINTS = {
-            "login": BASE_URL + "/authorize",
-            "reservations": BASE_URL + "/registration",
-            "profile": BASE_URL + "/profile",
-            "cancel": BASE_URL + "/registration",
-            }
-        return ENDPOINTS.get(endpoint_name)
+        } # return f"{base_url}{endpoints.get(endpoint_name)}"
+        return base_url + endpoints.get(endpoint_name)
 
 
     def login(self) -> None:
@@ -247,8 +278,6 @@ class ReservationManager:
     def create_reservation_for_seats(self, date):
         """Belirli bir tarih için koltuk rezervasyonu dener ve sonucu kaydeder."""
         logger.info(f"{date} tarihi için rezervasyon denemesi başlıyor...")
-        token = self.config.get('TELEGRAM_TOKEN')
-        chat_id = self.config.get('TELEGRAM_ID')
         for seat in self.config['SEATS']:
             try:
                 # logger.info(f"{date} tarihi için {seat}. koltuk denetleniyor")
@@ -256,7 +285,8 @@ class ReservationManager:
                     message = f"Rezervasyon başarılı: Tarih:{date}, Koltuk:{seat}"
                     logger.info(message)
                     print(message)
-                    self.telegram_bot.send_message(chat_id, token, str(message))
+                    if self.telegram_bot:
+                        self.telegram_bot.send_message(message)
                     return True  # Başarılı rezervasyon sonrası döngüyü durdur
                 # logger.warning(f"{date} tarihi için {seat}. koltuk uygun değil.")
             except Exception as e:
@@ -277,9 +307,11 @@ class ReservationManager:
 
         logger.info(f"Rezervasyon yapılacak tarihler: {upcoming_dates}")
         for date in upcoming_dates:
-            if not self.create_reservation_for_seats(date):
-                logger.warning(f"{date} tarihinde rezervasyon oluşturulamadı.")
-        return True
+            if self.create_reservation_for_seats(date):
+                return True  # İlk başarılı rezervasyondan sonra işlemi sonlandır
+        else:
+            logger.warning(f"{date} tarihinde rezervasyon oluşturulamadı.")
+            return False
 
 
     def manage_reservations(self):
@@ -294,5 +326,7 @@ class ReservationManager:
         print("Bitiş", Utility._now().strftime("%Y-%m-%d %H:%M:%S"))
         self.print_active_reservations_table(reserved_after, print)
         message = self.wrap_active_reservations_table(reserved_after)
-        self.telegram_bot.send_message(message)
+        if self.telegram_bot:
+            self.telegram_bot.send_message(message)
+
         return status

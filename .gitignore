@@ -164,3 +164,4 @@ cython_debug/
 
 
 workflow_runs_temizleyici.py
+config.json

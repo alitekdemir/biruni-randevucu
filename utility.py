@@ -1,12 +1,13 @@
 # Description: Utility functions for Python projects.
 # Version: 2.0
 
-from loguru import logger
+import os
 import sys
 import json
 import time
-from pathlib import Path
 import datetime
+from pathlib import Path
+from loguru import logger
 
 
 class Utility:
@@ -59,28 +60,34 @@ class Utility:
         # Aynı zamanda logları bir dosyaya yazmak için
         logger.add(file_path, backtrace=True, rotation="10 MB", compression="zip", level="INFO")
 
+
     @staticmethod
     def load_config(config_path):
         """Yapılandırma dosyasını yükler."""
-        try:
-            logger.info(f"Yapılandırma dosyası yükleniyor: {config_path}")
-            with open(config_path, "r") as file:
-                return json.load(file)
-        except FileNotFoundError:
-            logger.error(f"Yapılandırma dosyası bulunamadı: {config_path}")
-            return {}
+        default_config = {
+                "USERNAME": None,
+                "PASSWORD": None,
+                "TELEGRAM_ID": None,
+                "TELEGRAM_TOKEN": None,
+                "STATION_ID": "61a23dd5572db",
+                "ENTRY_TIME": "11:00",
+                "EXIT_TIME": "23:00",
+                "SEATS": [34, 32, 37, 38, 32, 1]
+            }
+        logger.info(f"Yapılandırma dosyası yükleniyor: {config_path}")
 
-    @staticmethod
-    def get_valid_input(prompt, valid_range):
-        while True:
-            try:
-                value = int(input(prompt))
-                if value in valid_range:
-                    return value
-                else:
-                    logger.error(f"Geçersiz girdi: {value}. Tekrar deneyin.")
-            except ValueError:
-                logger.error("Geçersiz girdi. Lütfen bir sayı girin.")
+        try:
+            with open(config_path, "r") as file:
+                config_data = json.load(file)
+                logger.info("Yapılandırma dosyası başarıyla yüklendi.")
+                return config_data
+        except FileNotFoundError:
+            logger.error(f"Yapılandırma dosyası bulunamadı: {config_path}. Varsayılan yapılandırma yükleniyor.")
+        except json.JSONDecodeError:
+            logger.error("Yapılandırma dosyasında JSON format hatası. Varsayılan yapılandırma yükleniyor.")
+
+        return default_config
+
 
     @staticmethod
     def clear_screen():
@@ -165,3 +172,64 @@ class Utility:
         print(f"Program {target_time_hm} zamanında çalıştırılacak.")
         logger.info(f"Program {target_time_hm} zamanında çalıştırılacak.")
         Utility.wait_until_target_time(target_time)
+
+
+
+    @staticmethod
+    def configure_schedule(choice):
+        """Kullanıcı seçimine göre zamanlama yapılandırması."""
+        if choice == "1":
+            logger.info("Program hemen çalıştırılıyor.")
+        elif choice == "2":
+            logger.info("Çalışma zamanı 00:00 olarak ayarlandı.")
+            Utility.schedule(True)
+        elif choice == "3":
+            hour = Utility.get_valid_input("Saat girin (0-23): ", range(24))
+            minute = Utility.get_valid_input("Dakika girin (0-59): ", range(60))
+            logger.info(f"Çalışma zamanı {hour:02}:{minute:02} olarak ayarlandı.")
+            Utility.schedule(False, hour, minute)
+        else:
+            logger.error("Geçersiz seçim yapıldı.")
+
+
+    @staticmethod
+    def display_menu() -> str:
+        menu_options = {
+            "0": "Çıkış",
+            "1": "Şimdi çalıştır",
+            "2": "Gece yarısı çalıştır",
+            "3": "Belirli bir saatte çalıştır",
+        }
+
+        while True:
+            for key, value in menu_options.items():
+                print(f"{key}. {value}")
+            choice = input("Seçiminiz: ").strip()
+            if choice in menu_options:
+                return choice
+            Utility.clear_screen()
+            print("Geçersiz seçim yaptınız! Tekrar deneyin.")
+
+
+    @staticmethod
+    def load_credentials():
+        """Çevre değişkenlerini yükler, zorunlu olanları kontrol eder ve isteğe bağlı olanlar için uyarı verir."""
+        # Çevre değişkenlerini güvenli bir şekilde yükle
+        credentials = {
+            "USERNAME": os.getenv("USERNAME"),
+            "PASSWORD": os.getenv("PASSWORD"),
+            "TELEGRAM_ID": os.getenv("TELEGRAM_ID"),
+            "TELEGRAM_TOKEN": os.getenv("TELEGRAM_TOKEN"),
+        }
+
+        # Zorunlu çevre değişkenlerini kontrol et
+        if not credentials["USERNAME"] or not credentials["PASSWORD"]:
+            logger.error("Zorunlu çevre değişkenleri eksik: USERNAME veya PASSWORD")
+            raise EnvironmentError("Missing critical environment variables: USERNAME or PASSWORD")
+
+        # İsteğe bağlı çevre değişkenlerini kontrol et
+        if not credentials["TELEGRAM_ID"] or not credentials["TELEGRAM_TOKEN"]:
+            logger.warning("Telegram bildirimleri için gerekli çevre değişkenleri eksik: TELEGRAM_ID veya TELEGRAM_TOKEN")
+
+        return credentials
+
