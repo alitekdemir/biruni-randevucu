@@ -73,7 +73,7 @@ class Utility:
                 "TELEGRAM_ID": None,
                 "TELEGRAM_TOKEN": None,
                 "STATION_ID": "61a23dd5572db",
-                "ENTRY_TIME": "11:00",
+                "ENTRY_TIME": "12:00",
                 "EXIT_TIME": "23:00",
                 "SEATS": [34, 32, 37, 38, 32, 1]
             }
